@@ -5715,6 +5715,8 @@ private slots:
                 readonly property var cursorView: folderView.menuAnchor() ? folderView.menuAnchor().parent.parent : null
                 %1 { id: folderView; anchors.fill: parent }
                 function start() { folderView.select(0, false); folderView.focusView() }
+                function restore(row) { folderView.select(row, true) }
+                function clearCursor() { backend.folder.clearSelection(); folderView.letGo() }
             }
         )").arg(viewType).toUtf8(), QUrl::fromLocalFile(sourceFolder() + "/KeyboardScrollTest.qml"));
         std::unique_ptr<QObject> root(component.create());
@@ -5767,12 +5769,40 @@ private slots:
         QCOMPARE(offset(), beforeClick);
         const int selected = view->property("currentIndex").toInt();
         const QPointF wheelAt = view->mapToScene(QPointF(view->width() / 2, view->height() / 2));
-        QWheelEvent wheel(wheelAt, window->mapToGlobal(wheelAt), {}, QPoint(0, -120),
+        QWheelEvent wheel(wheelAt, window->mapToGlobal(wheelAt), {}, QPoint(0, -720),
                           Qt::NoButton, Qt::NoModifier, Qt::NoScrollPhase, false);
         QGuiApplication::sendEvent(window, &wheel);
         QTRY_VERIFY(offset() > beforeClick);
         QCOMPARE(view->property("currentIndex").toInt(), selected);
         QCOMPARE(backend.folder()->selectedCount(), 1);
+        QTRY_VERIFY(currentItem()->mapToItem(view, QPointF()).y() + currentItem()->height() <= 0);
+        QTest::keyClick(window, Qt::Key_Down);
+        QCOMPARE(view->property("currentIndex").toInt(), selected + step);
+        QCOMPARE(backend.folder()->selectedCount(), 1);
+        QVERIFY(backend.folder()->isSelected(selected + step));
+        QTRY_VERIFY(visible());
+
+        QVERIFY(QMetaObject::invokeMethod(view, "positionViewAtEnd"));
+        QTRY_VERIFY(offset() > start);
+        const qreal beforeClear = offset();
+        QVERIFY(QMetaObject::invokeMethod(root.get(), "clearCursor"));
+        QCOMPARE(view->property("currentIndex").toInt(), -1);
+        QCOMPARE(backend.folder()->selectedCount(), 0);
+        QCOMPARE(offset(), beforeClear);
+        QTest::keyClick(window, Qt::Key_Down);
+        QCOMPARE(view->property("currentIndex").toInt(), 0);
+        QCOMPARE(backend.folder()->selectedCount(), 1);
+        QVERIFY(backend.folder()->isSelected(0));
+        QTRY_VERIFY(visible());
+
+        backend.folder()->selectRange(5, 10, false);
+        QVERIFY(QMetaObject::invokeMethod(root.get(), "restore", Q_ARG(QVariant, 60)));
+        QCOMPARE(view->property("currentIndex").toInt(), 60);
+        QTRY_VERIFY(visible());
+        QVERIFY(offset() > start);
+        QCOMPARE(backend.folder()->selectedCount(), 6);
+        for (int i = 5; i <= 10; ++i)
+            QVERIFY(backend.folder()->isSelected(i));
     }
 
     void gridBandHitsTheTilesBothWays()
